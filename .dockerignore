@@ -1,0 +1,41 @@
+.git/
+.gitignore
+.dockerignore
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node (dashboard gets built inside Docker; exclude local node_modules)
+dashboard/node_modules/
+dashboard/.vite/
+*.tsbuildinfo
+
+# Built dashboard (rebuilt inside Docker)
+dashboard/dist/
+
+# Operator files (mounted at runtime)
+config.yml
+*.db
+*.db-shm
+*.db-wal
+
+# Docs / specs
+specs/
+README.md
+*.log
+
+# Secrets
+.env
+.env.*

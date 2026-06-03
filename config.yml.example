@@ -1,0 +1,44 @@
+# Relay LLM Proxy — Configuration Example
+# Copy this file to config.yml and fill in your values.
+# config.yml is NOT committed to git (see .gitignore).
+
+# Backend: the LLM service that Relay proxies to.
+backend:
+  # type: "openai_compat" for OpenAI and compatible APIs (Together, Groq, etc.)
+  #       "ollama" for a local Ollama instance
+  type: openai_compat
+
+  # Base URL of the backend API (no trailing slash).
+  # For OpenAI: https://api.openai.com/v1
+  # For a local Ollama: http://localhost:11434
+  base_url: https://api.openai.com/v1
+
+  # API key forwarded to the backend.
+  # You can use an environment variable with ${VAR_NAME} syntax, OR
+  # set BACKEND_API_KEY in the environment to override this value entirely.
+  api_key: ${BACKEND_API_KEY}
+
+# API keys that clients must supply in "Authorization: Bearer <key>".
+# Each key has a human-readable label stored in usage records.
+api_keys:
+  - key: sk-relay-abc123
+    label: my-app
+  - key: sk-relay-def456
+    label: staging
+
+# Per-model cost rates in USD per token.
+# If a model is not listed, cost will be recorded as 0.0.
+# Use the exact model name as sent to (or reported by) the backend.
+cost_rates:
+  gpt-4o:
+    input_per_token: 0.0000025
+    output_per_token: 0.000010
+  gpt-4o-mini:
+    input_per_token: 0.00000015
+    output_per_token: 0.00000060
+  llama3:
+    input_per_token: 0.0
+    output_per_token: 0.0
+  llama3.1:
+    input_per_token: 0.0
+    output_per_token: 0.0
