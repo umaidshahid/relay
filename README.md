@@ -114,29 +114,3 @@ pytest proxy/tests/
 All tests run without a live backend or network connection.
 
 ---
-
-## Architecture
-
-```
-Client app
-    │  Authorization: Bearer sk-relay-*
-    ▼
-┌─────────────────────┐
-│  Relay (FastAPI)     │
-│  POST /v1/chat/      │
-│  completions         │
-│                     │
-│  ┌───────────────┐  │
-│  │ BackendAdapter│  │   Writes UsageRecord to SQLite
-│  │  openai_compat│  │──────────────────────────────►
-│  │  ollama       │  │
-│  └───────────────┘  │
-└─────────────────────┘
-    │  (identical response)
-    ▼
-Backend LLM API
-```
-
-Token counts come from the backend's own `usage` field whenever available
-(`exact`). Only when the backend returns no usage does Relay fall back to
-a tiktoken estimate, which is always labelled `estimated` in the dashboard.
