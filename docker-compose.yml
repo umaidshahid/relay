@@ -6,16 +6,29 @@ services:
     volumes:
       - ./config.yml:/app/config.yml:ro
       - relay-data:/data
+    env_file:
+      - .env
     environment:
       - RELAY_DB_PATH=/data/relay.db
-      # Optional: override the backend API key without editing config.yml
-      # - BACKEND_API_KEY=sk-your-key-here
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    depends_on:
+      - proxy
 
   # Optional: local Ollama instance
   # Start with: docker compose --profile ollama up
@@ -31,4 +44,6 @@ services:
 
 volumes:
   relay-data:
+  caddy-data:
+  caddy-config:
   ollama-data:

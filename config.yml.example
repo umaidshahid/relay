@@ -1,33 +1,17 @@
-# Relay LLM Proxy — Configuration Example
-# Copy this file to config.yml and fill in your values.
+# Relay LLM Proxy — Operator Configuration Example
+# Copy this file to config.yml and edit as needed.
 # config.yml is NOT committed to git (see .gitignore).
-
-# Backend: the LLM service that Relay proxies to.
-backend:
-  # type: "openai_compat" for OpenAI and compatible APIs (Together, Groq, etc.)
-  #       "ollama" for a local Ollama instance
-  type: openai_compat
-
-  # Base URL of the backend API (no trailing slash).
-  # For OpenAI: https://api.openai.com/v1
-  # For a local Ollama: http://localhost:11434
-  base_url: https://api.openai.com/v1
-
-  # API key forwarded to the backend.
-  # You can use an environment variable with ${VAR_NAME} syntax, OR
-  # set BACKEND_API_KEY in the environment to override this value entirely.
-  api_key: ${BACKEND_API_KEY}
-
-# API keys that clients must supply in "Authorization: Bearer <key>".
-# Each key has a human-readable label stored in usage records.
-api_keys:
-  - key: sk-relay-abc123
-    label: my-app
-  - key: sk-relay-def456
-    label: staging
-
+#
+# Per-user backend credentials (provider API keys) are stored securely in the
+# database. This file contains ONLY operator-level settings.
+#
+# Required environment variables (set in .env — never commit .env):
+#   RELAY_ENCRYPT_KEY  — Fernet key for encrypting provider credentials
+#                        Generate once: python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#   JWT_SECRET         — Secret for signing JWT sessions (any random string ≥32 chars)
+#
 # Per-model cost rates in USD per token.
-# If a model is not listed, cost will be recorded as 0.0.
+# If a model is not listed, cost is recorded as 0.0.
 # Use the exact model name as sent to (or reported by) the backend.
 cost_rates:
   gpt-4o:

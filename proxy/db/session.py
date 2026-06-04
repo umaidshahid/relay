@@ -49,17 +49,12 @@ engine = create_async_engine(
 
 
 async def create_db_and_tables() -> None:
-    """Create all SQLModel tables if they do not already exist.
-
-    Called once during application startup via the FastAPI lifespan handler.
-    Safe to call on an already-initialised database (uses CREATE TABLE IF NOT
-    EXISTS semantics via SQLAlchemy).
-    """
+    """Run migrations then create all SQLModel tables if they do not already exist."""
     async with engine.begin() as conn:
-        # Import models here to ensure they are registered on SQLModel.metadata
-        # before create_all is called.
-        from proxy.db.models import UsageRecord  # noqa: F401
+        from proxy.db.migrate import run_migrations
+        from proxy.db.models import BackendConfig, ProxyKey, UsageRecord, User  # noqa: F401
 
+        await run_migrations(conn)
         await conn.run_sync(SQLModel.metadata.create_all)
 
 

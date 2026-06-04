@@ -22,10 +22,6 @@ function StatCard({
   );
 }
 
-function formatCost(value: number): string {
-  return `$${value.toFixed(4)}`;
-}
-
 function formatNumber(value: number): string {
   return value.toLocaleString();
 }
@@ -48,9 +44,6 @@ export function SummaryCards({ data }: Props) {
   return (
     <Grid>
       <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
-        <StatCard label="Total Spend" value={formatCost(data.total_cost)} />
-      </Grid.Col>
-      <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
         <StatCard label="Total Requests" value={formatNumber(data.total_requests)} />
       </Grid.Col>
       <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
@@ -58,6 +51,12 @@ export function SummaryCards({ data }: Props) {
       </Grid.Col>
       <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
         <StatCard label="Output Tokens" value={formatNumber(data.total_output_tokens)} />
+      </Grid.Col>
+      <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+        <StatCard
+          label="Avg Tokens / sec"
+          value={data.avg_tokens_per_second !== null ? `${data.avg_tokens_per_second} t/s` : "—"}
+        />
       </Grid.Col>
     </Grid>
   );

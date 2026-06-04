@@ -1,33 +1,39 @@
 # Relay
 
-A self-hosted HTTP proxy that sits between your applications and LLM backends,
-recording token usage and cost for every request.
+A self-hosted multi-user LLM proxy. Each user signs up, configures their own
+backend credential, creates proxy API keys, and sends requests through them.
+The proxy meters token usage and cost per user. A React dashboard shows each
+user only their own data.
 
 ## Quick Start (under 5 minutes)
 
-### 1. Configure
+### 1. Clone and configure
+
+```bash
+git clone <repo-url>
+cd relay
+```
+
+Generate a Fernet encryption key (do this once; keep it safe):
+
+```bash
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Create `.env` (never commit this file):
+
+```bash
+cat > .env << 'EOF'
+RELAY_ENCRYPT_KEY=<paste-generated-key>
+JWT_SECRET=<random-string-at-least-32-chars>
+EOF
+```
+
+Copy the operator config:
 
 ```bash
 cp config.yml.example config.yml
-```
-
-Edit `config.yml` — set your backend URL and API key, and add at least one
-client API key:
-
-```yaml
-backend:
-  type: openai_compat
-  base_url: https://api.openai.com/v1
-  api_key: sk-your-openai-key
-
-api_keys:
-  - key: sk-relay-myapp
-    label: my-app
-
-cost_rates:
-  gpt-4o-mini:
-    input_per_token: 0.00000015
-    output_per_token: 0.00000060
+# Edit cost_rates if desired
 ```
 
 ### 2. Start
@@ -36,17 +42,60 @@ cost_rates:
 docker compose up
 ```
 
-The proxy starts on **port 8000**.
-The dashboard is at **http://localhost:8000/dashboard/**.
+The API is at **http://localhost:8000** and the dashboard at
+**http://localhost:8000/dashboard/**.
 
-### 3. Send a request
+### 3. Create an account
 
-Point your application at the proxy instead of the backend directly.
-Pass one of your configured API keys:
+Open **http://localhost:8000/dashboard/** in your browser, click **Sign up**,
+and create an account.
+
+Or via curl:
+
+```bash
+curl -s -X POST http://localhost:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"me@example.com","password":"changeme123"}' | jq
+```
+
+### 4. Log in and get a JWT
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/jwt/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=me@example.com&password=changeme123" | jq -r .access_token)
+```
+
+### 5. Configure your LLM backend
+
+```bash
+curl -s -X PUT http://localhost:8000/api/credentials \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "backend_type": "openai_compat",
+    "base_url": "https://api.openai.com/v1",
+    "credential": "sk-your-openai-key"
+  }' | jq
+# Response shows credential_masked: "****<last4>" — never the full key
+```
+
+### 6. Create a proxy key
+
+```bash
+PROXY_KEY=$(curl -s -X POST http://localhost:8000/api/keys \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"label":"my-app"}' | jq -r .key)
+echo "Proxy key: $PROXY_KEY"
+# Save this — it is shown exactly once
+```
+
+### 7. Send a proxied request
 
 ```bash
 curl http://localhost:8000/v1/chat/completions \
-  -H "Authorization: Bearer sk-relay-myapp" \
+  -H "Authorization: Bearer $PROXY_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o-mini",
@@ -54,15 +103,9 @@ curl http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-The response is identical to calling the backend directly.
+### 8. View your dashboard
 
-### 4. View usage
-
-Open **http://localhost:8000/dashboard/** in your browser to see:
-- Total spend
-- Spend per API key and per model
-- Daily cost chart
-- Full request log
+Open **http://localhost:8000/dashboard/** → log in → your usage appears.
 
 ---
 
@@ -72,15 +115,16 @@ Open **http://localhost:8000/dashboard/** in your browser to see:
 docker compose --profile ollama up
 ```
 
-Update `config.yml`:
+Configure credential (no API key for Ollama):
 
-```yaml
-backend:
-  type: ollama
-  base_url: http://ollama:11434
+```bash
+curl -s -X PUT http://localhost:8000/api/credentials \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"backend_type":"ollama","base_url":"http://ollama:11434","credential":null}'
 ```
 
-Pull a model inside the Ollama container:
+Pull a model:
 
 ```bash
 docker compose exec ollama ollama pull llama3
@@ -88,19 +132,14 @@ docker compose exec ollama ollama pull llama3
 
 ---
 
-## Configuration Reference
+## Production deployment (GCP e2-micro)
 
-| Key | Description |
-|-----|-------------|
-| `backend.type` | `openai_compat` or `ollama` |
-| `backend.base_url` | Base URL of the backend (no trailing slash) |
-| `backend.api_key` | Credential forwarded to the backend. Use `${VAR}` for env var interpolation, or set `BACKEND_API_KEY` env var |
-| `api_keys[].key` | Secret token clients send in `Authorization: Bearer <key>` |
-| `api_keys[].label` | Human-readable name stored in usage records |
-| `cost_rates.<model>.input_per_token` | USD cost per input token |
-| `cost_rates.<model>.output_per_token` | USD cost per output token |
+1. Copy the repo to the VM.
+2. Create `.env` on the VM with `RELAY_ENCRYPT_KEY` and `JWT_SECRET`.
+3. Edit `Caddyfile` — replace `relay.example.com` with your subdomain.
+4. `docker compose up -d`
 
-If a model has no configured rate, its cost is recorded as `0.0`.
+Caddy handles HTTPS automatically via Let's Encrypt.
 
 ---
 
@@ -109,8 +148,26 @@ If a model has no configured rate, its cost is recorded as `0.0`.
 ```bash
 pip install -e ".[dev]"
 pytest proxy/tests/
+# All tests run without a live backend or network connection
 ```
 
-All tests run without a live backend or network connection.
-
 ---
+
+## Configuration Reference
+
+`config.yml` contains only operator-level settings (cost rates).
+Per-user backend credentials are stored encrypted in the database.
+
+| Key | Description |
+|-----|-------------|
+| `cost_rates.<model>.input_per_token` | USD cost per input token |
+| `cost_rates.<model>.output_per_token` | USD cost per output token |
+
+If a model has no configured rate, its cost is recorded as `0.0`.
+
+**Required environment variables** (set in `.env`):
+
+| Variable | Description |
+|----------|-------------|
+| `RELAY_ENCRYPT_KEY` | Fernet key for encrypting provider credentials (generate once with `Fernet.generate_key()`) |
+| `JWT_SECRET` | Secret for signing JWT sessions (any random string ≥ 32 chars) |

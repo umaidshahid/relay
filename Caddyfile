@@ -1,0 +1,12 @@
+# Caddyfile for Relay
+# Replace relay.example.com with your subdomain.
+# Caddy handles HTTPS automatically via Let's Encrypt.
+
+relay.example.com {
+    reverse_proxy proxy:8000
+}
+
+# Local development without TLS (comment out the block above and use this):
+# :8080 {
+#     reverse_proxy proxy:8000
+# }

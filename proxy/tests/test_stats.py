@@ -1,43 +1,39 @@
 """
-Tests for proxy/routers/stats.py — unit tests against in-memory SQLite.
+proxy/tests/test_stats.py
 
-Seeds a known set of UsageRecords and asserts correct aggregation across
-all five stats endpoints.
+Tests for /stats/* endpoints — user-scoped aggregations.
+Seeds UsageRecords directly via SQLModel and verifies endpoint responses.
 """
 
 from __future__ import annotations
 
-import os
+import uuid
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import pytest
-import pytest_asyncio
-
-from sqlmodel import SQLModel
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from proxy.backends.base import ChatResponse, UsageData
+from proxy.db import session as db_session
 from proxy.db.models import UsageRecord
+from proxy.main import app
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(autouse=True)
-def use_test_db(tmp_path):
-    os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{tmp_path}/test_stats.db"
-    yield
-    os.environ.pop("DATABASE_URL", None)
-
-
-async def _seed_records(session: AsyncSession) -> None:
+async def _seed_records_for_user(
+    session: AsyncSession, user_id: uuid.UUID, proxy_key_id: uuid.UUID
+) -> None:
     now = datetime.now(timezone.utc)
     records = [
         UsageRecord(
+            user_id=user_id,
             timestamp=now - timedelta(hours=2),
-            api_key_label="app-a",
-            backend="openai_compat",
+            proxy_key_id=proxy_key_id,
+            proxy_key_label="app-a",
+            backend_type="openai_compat",
             model="gpt-4o-mini",
             input_tokens=100,
             output_tokens=50,
@@ -46,25 +42,16 @@ async def _seed_records(session: AsyncSession) -> None:
             status_code=200,
         ),
         UsageRecord(
+            user_id=user_id,
             timestamp=now - timedelta(hours=1),
-            api_key_label="app-b",
-            backend="openai_compat",
-            model="gpt-4o-mini",
+            proxy_key_id=proxy_key_id,
+            proxy_key_label="app-a",
+            backend_type="ollama",
+            model="llama3",
             input_tokens=200,
             output_tokens=80,
-            cost=0.10,
-            token_count_source="exact",
-            status_code=200,
-        ),
-        UsageRecord(
-            timestamp=now,
-            api_key_label="app-a",
-            backend="ollama",
-            model="llama3",
-            input_tokens=50,
-            output_tokens=20,
             cost=0.0,
-            token_count_source="exact",
+            token_count_source="estimated",
             status_code=200,
         ),
     ]
@@ -73,124 +60,154 @@ async def _seed_records(session: AsyncSession) -> None:
     await session.commit()
 
 
-@pytest_asyncio.fixture
-async def seeded_session():
-    from proxy.db import session as db_session
-    # Reinitialise engine to use the test DB
-    db_session.engine = create_async_engine(
-        os.environ["DATABASE_URL"],
-        connect_args={"check_same_thread": False},
+async def _create_cred_and_key(token: str, client) -> tuple[uuid.UUID, uuid.UUID]:
+    """Create a credential + key and return (user_id, key_id)."""
+    me = await client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    user_id = uuid.UUID(me.json()["id"])
+    cred = (await client.post(
+        "/api/credentials",
+        json={"name": "Test", "backend_type": "openai_compat", "base_url": "https://example.com/v1"},
+        headers={"Authorization": f"Bearer {token}"},
+    )).json()
+    key_resp = await client.post(
+        "/api/keys",
+        json={"label": "test", "backend_config_id": cred["id"]},
+        headers={"Authorization": f"Bearer {token}"},
     )
-    async with db_session.engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    return user_id, uuid.UUID(key_resp.json()["id"])
 
-    async with AsyncSession(db_session.engine) as session:
-        await _seed_records(session)
-
-    yield db_session.engine
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_summary_totals(seeded_session):
-    from proxy.db import session as db_session
+async def test_summary_returns_user_scoped_totals(user_a_client):
+    _, token, client = user_a_client
+    user_id, key_id = await _create_cred_and_key(token, client)
+
+    # Seed directly
     async with AsyncSession(db_session.engine) as session:
-        from sqlalchemy import func, select
-        result = await session.exec(  # type: ignore[call-overload]
-            select(
-                func.sum(UsageRecord.cost).label("total_cost"),
-                func.count(UsageRecord.id).label("total_requests"),
-                func.sum(UsageRecord.input_tokens).label("total_input"),
-                func.sum(UsageRecord.output_tokens).label("total_output"),
+        await _seed_records_for_user(session, user_id, key_id)
+
+    resp = await client.get("/stats/summary", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_requests"] == 2
+    assert data["total_input_tokens"] == 300
+    assert data["total_output_tokens"] == 130
+    assert abs(data["total_cost"] - 0.04) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_summary_empty_returns_zeros(user_a_client):
+    _, token, client = user_a_client
+    resp = await client.get("/stats/summary", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total_requests"] == 0
+    assert data["total_cost"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_two_users_see_only_own_stats(two_users):
+    user_a, token_a, user_b, token_b = two_users
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        cred_a = (await c.post(
+            "/api/credentials",
+            json={"name": "Backend A", "backend_type": "openai_compat", "base_url": "http://fake/v1", "credential": "sk-fake"},
+            headers={"Authorization": f"Bearer {token_a}"},
+        )).json()
+        key_a = (await c.post(
+            "/api/keys",
+            json={"label": "a", "backend_config_id": cred_a["id"]},
+            headers={"Authorization": f"Bearer {token_a}"},
+        )).json()["key"]
+
+        mock_usage = UsageData(input_tokens=10, output_tokens=5, source="exact")
+        mock_resp_obj = ChatResponse(
+            body={
+                "id": "x",
+                "object": "chat.completion",
+                "model": "gpt-4o-mini",
+                "choices": [],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            },
+            status_code=200,
+        )
+        with patch("proxy.routers.proxy.OpenAICompatAdapter") as mock_cls:
+            mock_adapter = __import__("unittest.mock", fromlist=["AsyncMock"]).AsyncMock()
+            mock_adapter.chat_complete.return_value = (mock_resp_obj, mock_usage)
+            mock_cls.return_value = mock_adapter
+            await c.post(
+                "/v1/chat/completions",
+                json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
+                headers={"Authorization": f"Bearer {key_a}"},
             )
-        )
-        row = result.one()
-    assert float(row.total_cost) == pytest.approx(0.14)
-    assert int(row.total_requests) == 3
-    assert int(row.total_input) == 350
-    assert int(row.total_output) == 150
+
+        # User A sees 1 record, User B sees 0
+        summary_a = await c.get("/stats/summary", headers={"Authorization": f"Bearer {token_a}"})
+        summary_b = await c.get("/stats/summary", headers={"Authorization": f"Bearer {token_b}"})
+
+    assert summary_a.json()["total_requests"] == 1
+    assert summary_b.json()["total_requests"] == 0
 
 
 @pytest.mark.asyncio
-async def test_by_key_groups_correctly(seeded_session):
-    from proxy.db import session as db_session
-    from sqlalchemy import func, select
+async def test_by_key_groups_by_proxy_key(user_a_client):
+    _, token, client = user_a_client
+    user_id, key_id = await _create_cred_and_key(token, client)
+
     async with AsyncSession(db_session.engine) as session:
-        result = await session.exec(  # type: ignore[call-overload]
-            select(
-                UsageRecord.api_key_label,
-                func.count(UsageRecord.id).label("cnt"),
-            ).group_by(UsageRecord.api_key_label)
-        )
-        rows = {r.api_key_label: r.cnt for r in result.all()}
-    assert rows["app-a"] == 2
-    assert rows["app-b"] == 1
+        await _seed_records_for_user(session, user_id, key_id)
+
+    resp = await client.get("/stats/by-key", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["proxy_key_label"] == "app-a"
+    assert data[0]["total_requests"] == 2
 
 
 @pytest.mark.asyncio
-async def test_by_model_groups_correctly(seeded_session):
-    from proxy.db import session as db_session
-    from sqlalchemy import func, select
+async def test_by_model_groups_by_model(user_a_client):
+    _, token, client = user_a_client
+    user_id, key_id = await _create_cred_and_key(token, client)
+
     async with AsyncSession(db_session.engine) as session:
-        result = await session.exec(  # type: ignore[call-overload]
-            select(
-                UsageRecord.model,
-                func.count(UsageRecord.id).label("cnt"),
-            ).group_by(UsageRecord.model)
-        )
-        rows = {r.model: r.cnt for r in result.all()}
-    assert rows["gpt-4o-mini"] == 2
-    assert rows["llama3"] == 1
+        await _seed_records_for_user(session, user_id, key_id)
+
+    resp = await client.get("/stats/by-model", headers={"Authorization": f"Bearer {token}"})
+    assert resp.status_code == 200
+    data = resp.json()
+    models = {r["model"] for r in data}
+    assert "gpt-4o-mini" in models
+    assert "llama3" in models
 
 
 @pytest.mark.asyncio
-async def test_empty_db_returns_zero_totals(tmp_path):
-    from proxy.db import session as db_session
-    db_url = f"sqlite+aiosqlite:///{tmp_path}/empty.db"
-    db_session.engine = create_async_engine(db_url, connect_args={"check_same_thread": False})
-    async with db_session.engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+async def test_requests_pagination(user_a_client):
+    _, token, client = user_a_client
+    user_id, key_id = await _create_cred_and_key(token, client)
 
-    from sqlalchemy import func, select
     async with AsyncSession(db_session.engine) as session:
-        result = await session.exec(  # type: ignore[call-overload]
-            select(
-                func.coalesce(func.sum(UsageRecord.cost), 0.0).label("total_cost"),
-                func.count(UsageRecord.id).label("total_requests"),
-            )
-        )
-        row = result.one()
-    assert float(row.total_cost) == 0.0
-    assert int(row.total_requests) == 0
+        await _seed_records_for_user(session, user_id, key_id)
+
+    resp = await client.get(
+        "/stats/requests?limit=1&offset=0",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+    assert len(data["items"]) == 1
 
 
 @pytest.mark.asyncio
-async def test_timeseries_filters_by_days(seeded_session):
-    from proxy.db import session as db_session
-    from sqlalchemy import func, select
-    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
-    async with AsyncSession(db_session.engine) as session:
-        result = await session.exec(  # type: ignore[call-overload]
-            select(func.count(UsageRecord.id))
-            .where(UsageRecord.timestamp >= cutoff)
-        )
-        count = result.scalar()
-    assert count == 3  # all 3 seeds are within the last day
+async def test_estimated_tokens_labelled(user_a_client):
+    _, token, client = user_a_client
+    user_id, key_id = await _create_cred_and_key(token, client)
 
-
-@pytest.mark.asyncio
-async def test_requests_pagination(seeded_session):
-    from proxy.db import session as db_session
-    from sqlalchemy import select
     async with AsyncSession(db_session.engine) as session:
-        result = await session.exec(  # type: ignore[call-overload]
-            select(UsageRecord)
-            .order_by(UsageRecord.timestamp.desc())  # type: ignore[attr-defined]
-            .offset(1)
-            .limit(2)
-        )
-        rows = result.all()
-    assert len(rows) == 2
+        await _seed_records_for_user(session, user_id, key_id)
+
+    resp = await client.get("/stats/requests", headers={"Authorization": f"Bearer {token}"})
+    sources = {item["token_count_source"] for item in resp.json()["items"]}
+    assert "estimated" in sources

@@ -6,24 +6,19 @@ interface Props {
   byModel: ModelBreakdown[];
 }
 
-function formatCost(value: number): string {
-  return `$${value.toFixed(4)}`;
-}
-
 function formatNumber(value: number): string {
   return value.toLocaleString();
 }
 
 function KeyTable({ rows }: { rows: KeyBreakdown[] }) {
   if (rows.length === 0) {
-    return <Table.Tr><Table.Td colSpan={4}>No data yet.</Table.Td></Table.Tr>;
+    return <Table.Tr><Table.Td colSpan={3}>No data yet.</Table.Td></Table.Tr>;
   }
   return (
     <>
       {rows.map((row) => (
-        <Table.Tr key={row.api_key_label}>
-          <Table.Td>{row.api_key_label}</Table.Td>
-          <Table.Td>{formatCost(row.total_cost)}</Table.Td>
+        <Table.Tr key={row.proxy_key_id}>
+          <Table.Td>{row.proxy_key_label}</Table.Td>
           <Table.Td>{formatNumber(row.total_requests)}</Table.Td>
           <Table.Td>
             {formatNumber(row.total_input_tokens)} / {formatNumber(row.total_output_tokens)}
@@ -36,15 +31,14 @@ function KeyTable({ rows }: { rows: KeyBreakdown[] }) {
 
 function ModelTable({ rows }: { rows: ModelBreakdown[] }) {
   if (rows.length === 0) {
-    return <Table.Tr><Table.Td colSpan={5}>No data yet.</Table.Td></Table.Tr>;
+    return <Table.Tr><Table.Td colSpan={4}>No data yet.</Table.Td></Table.Tr>;
   }
   return (
     <>
       {rows.map((row) => (
-        <Table.Tr key={`${row.model}-${row.backend}`}>
+        <Table.Tr key={`${row.model}-${row.backend_type}`}>
           <Table.Td>{row.model}</Table.Td>
-          <Table.Td>{row.backend}</Table.Td>
-          <Table.Td>{formatCost(row.total_cost)}</Table.Td>
+          <Table.Td>{row.backend_type}</Table.Td>
           <Table.Td>{formatNumber(row.total_requests)}</Table.Td>
           <Table.Td>
             {formatNumber(row.total_input_tokens)} / {formatNumber(row.total_output_tokens)}
@@ -72,7 +66,6 @@ export function BreakdownTable({ byKey, byModel }: Props) {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Key</Table.Th>
-                <Table.Th>Cost</Table.Th>
                 <Table.Th>Requests</Table.Th>
                 <Table.Th>In / Out Tokens</Table.Th>
               </Table.Tr>
@@ -89,7 +82,6 @@ export function BreakdownTable({ byKey, byModel }: Props) {
               <Table.Tr>
                 <Table.Th>Model</Table.Th>
                 <Table.Th>Backend</Table.Th>
-                <Table.Th>Cost</Table.Th>
                 <Table.Th>Requests</Table.Th>
                 <Table.Th>In / Out Tokens</Table.Th>
               </Table.Tr>

@@ -16,6 +16,12 @@ dependencies = [
     "tiktoken>=0.7.0",
     "aiosqlite>=0.20.0",
     "python-multipart>=0.0.9",
+    # fastapi-users: self-hosted auth (signup, login, JWT, bcrypt) — stdlib cannot provide
+    "fastapi-users[sqlalchemy]>=13.0.0",
+    # cryptography: Fernet authenticated symmetric encryption for provider credentials
+    "cryptography>=42.0.0",
+    # email-validator: required by fastapi-users for email field validation
+    "email-validator>=2.0.0",
 ]
 
 [project.optional-dependencies]
