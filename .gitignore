@@ -59,3 +59,13 @@ dashboard/.vite/
 
 # Logs
 *.log
+
+# Claude Code
+.claude/
+CLAUDE.md
+**/CLAUDE.md
+
+# Spec Kit
+.specify/
+specs/
+
