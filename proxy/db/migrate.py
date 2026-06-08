@@ -34,6 +34,8 @@ async def run_migrations(conn: AsyncConnection) -> None:
 
 
 async def _m001_usage_records_tokens_per_second(conn: AsyncConnection) -> None:
+    if "usage_records" not in (await _tables(conn)):
+        return  # table doesn't exist yet; create_all will make it correctly
     cols = await _columns(conn, "usage_records")
     if "tokens_per_second" not in cols:
         await conn.execute(text(
