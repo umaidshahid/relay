@@ -1,6 +1,6 @@
 services:
   proxy:
-    build: .
+    image: ghcr.io/umaidshahid/relay:latest
     ports:
       - "8000:8000"
     volumes:
@@ -29,9 +29,7 @@ services:
     depends_on:
       - proxy
 
-    
 volumes:
   relay-data:
   caddy-data:
   caddy-config:
-  ollama-data:
