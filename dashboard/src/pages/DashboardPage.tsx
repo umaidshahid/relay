@@ -40,7 +40,6 @@ export function DashboardPage() {
 
   const loadRequests = useCallback(
     (offset: number) => {
-      if (!token) return;
       requestOffsetRef.current = offset;
       getRequests(token, 10, offset).then(setRequests).catch(console.error);
     },
@@ -48,23 +47,20 @@ export function DashboardPage() {
   );
 
   const loadAll = useCallback(async () => {
-    if (!token) return;
     setRefreshing(true);
-    try {
-      await Promise.all([
-        getSummary(token).then(setSummary),
-        getByKey(token).then(setByKey),
-        getByModel(token).then(setByModel),
-        getTimeseries(token, 30).then(setTimeseries),
-        getRequests(token, 10, requestOffsetRef.current).then(setRequests),
-      ]);
-      setLastRefreshed(new Date());
-      setLoaded(true);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setRefreshing(false);
-    }
+    // Settle each fetch independently: one failing endpoint must not block the
+    // others from rendering, nor prevent the dashboard from leaving its initial
+    // loading state.
+    await Promise.allSettled([
+      getSummary(token).then(setSummary),
+      getByKey(token).then(setByKey),
+      getByModel(token).then(setByModel),
+      getTimeseries(token, 30).then(setTimeseries),
+      getRequests(token, 10, requestOffsetRef.current).then(setRequests),
+    ]);
+    setLastRefreshed(new Date());
+    setLoaded(true);
+    setRefreshing(false);
   }, [token]);
 
   // Initial load

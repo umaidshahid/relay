@@ -163,24 +163,26 @@ export async function startOAuth(provider: "google" | "github"): Promise<void> {
 // Stats endpoints (all require JWT)
 // ---------------------------------------------------------------------------
 
-export function getSummary(token: string): Promise<Summary> {
+// token is optional: OAuth users have no bearer token and authenticate via the
+// httpOnly cookie that get()'s credentials: "include" sends automatically.
+export function getSummary(token?: string | null): Promise<Summary> {
   return get<Summary>("/stats/summary", token);
 }
 
-export function getByKey(token: string): Promise<KeyBreakdown[]> {
+export function getByKey(token?: string | null): Promise<KeyBreakdown[]> {
   return get<KeyBreakdown[]>("/stats/by-key", token);
 }
 
-export function getByModel(token: string): Promise<ModelBreakdown[]> {
+export function getByModel(token?: string | null): Promise<ModelBreakdown[]> {
   return get<ModelBreakdown[]>("/stats/by-model", token);
 }
 
-export function getTimeseries(token: string, days = 30): Promise<TimeseriesPoint[]> {
+export function getTimeseries(token?: string | null, days = 30): Promise<TimeseriesPoint[]> {
   return get<TimeseriesPoint[]>(`/stats/timeseries?days=${days}`, token);
 }
 
 export function getRequests(
-  token: string,
+  token?: string | null,
   limit = 50,
   offset = 0
 ): Promise<RequestsResponse> {
