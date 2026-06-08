@@ -29,11 +29,12 @@ JWT_SECRET=<random-string-at-least-32-chars>
 EOF
 ```
 
-Copy the operator config:
+Optionally, set per-model cost rates. If you skip this, all usage costs are
+recorded as `0.0`:
 
 ```bash
 cp config.yml.example config.yml
-# Edit cost_rates if desired
+# Edit cost_rates, then mount it into the proxy container if desired
 ```
 
 ### 2. Start

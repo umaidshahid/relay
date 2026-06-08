@@ -97,8 +97,9 @@ def load_config(path: str | Path | None = None) -> RelayConfig:
     2. RELAY_CONFIG environment variable
     3. config.yml in the current working directory
 
-    config.yml is optional — if absent, an empty config (no cost rates) is
-    returned so the server starts without it in development.
+    config.yml is optional — if absent or empty, an empty config (no cost
+    rates) is returned so the server starts without it. Models with no
+    configured rate simply record their cost as 0.0.
     """
     if path is None:
         path = os.environ.get("RELAY_CONFIG", "config.yml")
@@ -109,6 +110,9 @@ def load_config(path: str | Path | None = None) -> RelayConfig:
 
     with config_path.open("r", encoding="utf-8") as fh:
         raw: Any = yaml.safe_load(fh)
+
+    if raw is None:
+        return RelayConfig()
 
     if not isinstance(raw, dict):
         raise ValueError(f"config.yml must be a YAML mapping, got {type(raw).__name__}")

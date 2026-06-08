@@ -4,7 +4,6 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./config.yml:/app/config.yml:ro
       - relay-data:/data
     env_file:
       - .env
