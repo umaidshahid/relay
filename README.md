@@ -29,14 +29,6 @@ JWT_SECRET=<random-string-at-least-32-chars>
 EOF
 ```
 
-Optionally, set per-model cost rates. If you skip this, all usage costs are
-recorded as `0.0`:
-
-```bash
-cp config.yml.example config.yml
-# Edit cost_rates, then mount it into the proxy container if desired
-```
-
 ### 2. Start
 
 ```bash
@@ -110,37 +102,9 @@ Open **http://localhost:8000/dashboard/** → log in → your usage appears.
 
 ---
 
-## Using Ollama (local models)
+## Contributing
 
-```bash
-docker compose --profile ollama up
-```
-
-Configure credential (no API key for Ollama):
-
-```bash
-curl -s -X PUT http://localhost:8000/api/credentials \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"backend_type":"ollama","base_url":"http://ollama:11434","credential":null}'
-```
-
-Pull a model:
-
-```bash
-docker compose exec ollama ollama pull llama3
-```
-
----
-
-## Production deployment (GCP e2-micro)
-
-1. Copy the repo to the VM.
-2. Create `.env` on the VM with `RELAY_ENCRYPT_KEY` and `JWT_SECRET`.
-3. Edit `Caddyfile` — replace `relay.example.com` with your subdomain.
-4. `docker compose up -d`
-
-Caddy handles HTTPS automatically via Let's Encrypt.
+Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, project structure, and how to submit a pull request.
 
 ---
 
@@ -154,19 +118,7 @@ pytest proxy/tests/
 
 ---
 
-## Configuration Reference
-
-`config.yml` contains only operator-level settings (cost rates).
-Per-user backend credentials are stored encrypted in the database.
-
-| Key | Description |
-|-----|-------------|
-| `cost_rates.<model>.input_per_token` | USD cost per input token |
-| `cost_rates.<model>.output_per_token` | USD cost per output token |
-
-If a model has no configured rate, its cost is recorded as `0.0`.
-
-**Required environment variables** (set in `.env`):
+## Required environment variables (set in `.env`):
 
 | Variable | Description |
 |----------|-------------|
