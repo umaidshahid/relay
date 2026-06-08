@@ -33,6 +33,9 @@ export function DashboardPage() {
   const [requests, setRequests] = useState<RequestsResponse | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Distinguishes "first fetch hasn't resolved yet" (show Loading…) from
+  // "loaded, but the user has no data yet" (show an empty state).
+  const [loaded, setLoaded] = useState(false);
   const requestOffsetRef = useRef(0);
 
   const loadRequests = useCallback(
@@ -56,6 +59,7 @@ export function DashboardPage() {
         getRequests(token, 10, requestOffsetRef.current).then(setRequests),
       ]);
       setLastRefreshed(new Date());
+      setLoaded(true);
     } catch (err) {
       console.error(err);
     } finally {
@@ -94,10 +98,10 @@ export function DashboardPage() {
         </Tooltip>
       </Group>
 
-      <SummaryCards data={summary} />
+      <SummaryCards data={summary} loaded={loaded} />
       <TpsChart data={timeseries} />
       <BreakdownTable byKey={byKey} byModel={byModel} />
-      <RequestLog data={requests} onPageChange={loadRequests} />
+      <RequestLog data={requests} loaded={loaded} onPageChange={loadRequests} />
     </Stack>
   );
 }

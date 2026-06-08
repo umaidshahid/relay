@@ -6,6 +6,7 @@ const PAGE_SIZE = 10;
 
 interface Props {
   data: RequestsResponse | null;
+  loaded: boolean;
   onPageChange: (offset: number) => void;
 }
 
@@ -29,10 +30,12 @@ function formatTimestamp(ts: string): string {
   return new Date(ts).toLocaleString();
 }
 
-export function RequestLog({ data, onPageChange }: Props) {
+export function RequestLog({ data, loaded, onPageChange }: Props) {
   const [activePage, setActivePage] = useState(1);
 
-  if (!data) {
+  // Only show Loading… until the first fetch resolves; once loaded, an empty
+  // result falls through to the "No requests recorded yet." empty state below.
+  if (!data && !loaded) {
     return (
       <Card shadow="sm" padding="lg" radius="md" withBorder>
         <Title order={4} mb="md">Request Log</Title>
@@ -41,7 +44,9 @@ export function RequestLog({ data, onPageChange }: Props) {
     );
   }
 
-  const totalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   function handlePageChange(page: number) {
     setActivePage(page);
@@ -52,10 +57,10 @@ export function RequestLog({ data, onPageChange }: Props) {
     <Card shadow="sm" padding="lg" radius="md" withBorder>
       <Group justify="space-between" mb="md">
         <Title order={4}>Request Log</Title>
-        <Text size="sm" c="dimmed">{data.total.toLocaleString()} total</Text>
+        <Text size="sm" c="dimmed">{total.toLocaleString()} total</Text>
       </Group>
 
-      {data.items.length === 0 ? (
+      {items.length === 0 ? (
         <Text c="dimmed">No requests recorded yet.</Text>
       ) : (
         <>
@@ -73,7 +78,7 @@ export function RequestLog({ data, onPageChange }: Props) {
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {data.items.map((row: RequestRecord) => (
+              {items.map((row: RequestRecord) => (
                 <Table.Tr key={row.id}>
                   <Table.Td>
                     <Text size="xs" c="dimmed">{formatTimestamp(row.timestamp)}</Text>
