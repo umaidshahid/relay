@@ -19,9 +19,19 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from fastapi_users.db import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import Index, String
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from fastapi_users.db import (
+    SQLAlchemyBaseOAuthAccountTableUUID,
+    SQLAlchemyBaseUserTableUUID,
+)
+from fastapi_users_db_sqlalchemy.generics import GUID
+from sqlalchemy import ForeignKey, Index, String
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    declared_attr,
+    mapped_column,
+    relationship,
+)
 from sqlmodel import Field, SQLModel
 
 
@@ -40,11 +50,37 @@ class _Base(DeclarativeBase):
     metadata = SQLModel.metadata  # type: ignore[assignment]
 
 
+class OAuthAccount(_Base, SQLAlchemyBaseOAuthAccountTableUUID):
+    """Per-user linked OAuth account (Google, GitHub).
+
+    FastAPI-Users requires this table for OAuth: it stores the provider name,
+    the provider's account id, and the OAuth access token so a user can sign
+    in with multiple providers that resolve to the same Relay account
+    (associate_by_email).
+    """
+
+    __tablename__ = "oauth_accounts"
+
+    # The FastAPI-Users base defaults this FK to table "user"; our user table
+    # is "users", so override the column to point at the right target.
+    @declared_attr
+    def user_id(cls) -> Mapped[uuid.UUID]:
+        return mapped_column(
+            GUID, ForeignKey("users.id", ondelete="cascade"), nullable=False
+        )
+
+
 class User(_Base, SQLAlchemyBaseUserTableUUID):
     __tablename__ = "users"
 
     display_name: Mapped[Optional[str]] = mapped_column(
         String(100), nullable=True, default=None
+    )
+
+    # Loaded eagerly so the UserManager's OAuth flow can read linked accounts
+    # without a lazy load outside the async session.
+    oauth_accounts: Mapped[list[OAuthAccount]] = relationship(
+        "OAuthAccount", lazy="joined"
     )
 
 

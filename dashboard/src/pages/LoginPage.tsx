@@ -14,10 +14,10 @@ import {
 import { useForm } from "@mantine/form";
 import { useToggle, upperFirst } from "@mantine/hooks";
 import { IconBrandGithub, IconBrandGoogle } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
-import { register } from "../api";
+import { getAuthConfig, register, startOAuth, type AuthConfig } from "../api";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -25,6 +25,27 @@ export function LoginPage() {
   const [type, toggle] = useToggle(["login", "register"] as const);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [oauth, setOauth] = useState<AuthConfig>({ google: false, github: false });
+  const [oauthPending, setOauthPending] = useState<null | "google" | "github">(null);
+
+  // Discover which OAuth providers the backend has configured so we only
+  // enable the buttons that will actually work.
+  useEffect(() => {
+    getAuthConfig()
+      .then(setOauth)
+      .catch(() => setOauth({ google: false, github: false }));
+  }, []);
+
+  async function handleOAuth(provider: "google" | "github") {
+    setError(null);
+    setOauthPending(provider);
+    try {
+      await startOAuth(provider); // redirects the browser away on success
+    } catch {
+      setError(`Could not start ${provider} sign-in. Try again.`);
+      setOauthPending(null);
+    }
+  }
 
   const form = useForm({
     initialValues: { email: "", password: "" },
@@ -78,8 +99,10 @@ export function LoginPage() {
               radius="xl"
               variant="default"
               leftSection={<IconBrandGoogle size={18} />}
-              disabled
-              title="Google OAuth coming soon"
+              disabled={!oauth.google}
+              loading={oauthPending === "google"}
+              onClick={() => handleOAuth("google")}
+              title={oauth.google ? undefined : "Google OAuth not configured"}
             >
               Continue with Google
             </Button>
@@ -88,8 +111,10 @@ export function LoginPage() {
               radius="xl"
               variant="default"
               leftSection={<IconBrandGithub size={18} />}
-              disabled
-              title="GitHub OAuth coming soon"
+              disabled={!oauth.github}
+              loading={oauthPending === "github"}
+              onClick={() => handleOAuth("github")}
+              title={oauth.github ? undefined : "GitHub OAuth not configured"}
             >
               Continue with GitHub
             </Button>

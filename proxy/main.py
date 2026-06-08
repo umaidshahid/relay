@@ -28,7 +28,15 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi_users import schemas
 
-from proxy.auth import auth_backend, fastapi_users
+from proxy.auth import (
+    OAUTH_STATE_SECRET,
+    auth_backend,
+    cookie_backend,
+    fastapi_users,
+    github_oauth_client,
+    google_oauth_client,
+    oauth_cookie_backend,
+)
 from proxy.config import load_config, validate_required_env
 from proxy.db.models import User
 from proxy.db.session import create_db_and_tables
@@ -89,16 +97,87 @@ app.include_router(
     prefix="/auth/jwt",
     tags=["auth"],
 )
+# Cookie backend: exposes /auth/cookie/login + /auth/cookie/logout. The OAuth
+# flow sets the cookie; logout here expires it. (Login via cookie is available
+# but the SPA uses the JWT bearer path for password login.)
+app.include_router(
+    fastapi_users.get_auth_router(cookie_backend),
+    prefix="/auth/cookie",
+    tags=["auth"],
+)
 app.include_router(
     fastapi_users.get_register_router(UserRead, UserCreate),
     prefix="/auth",
     tags=["auth"],
 )
+
+
+# Define /auth/config BEFORE the users router: that router registers a
+# catch-all GET /auth/{id} (auth-required), which would otherwise swallow
+# /auth/config as if "config" were a user id and return 401.
+@app.get("/auth/config", tags=["auth"])
+async def auth_config() -> dict[str, bool]:
+    """Report which OAuth providers are configured.
+
+    The dashboard calls this to decide whether to enable the Google/GitHub
+    sign-in buttons. No secrets are returned — only booleans.
+    """
+    return {
+        "google": google_oauth_client is not None,
+        "github": github_oauth_client is not None,
+    }
+
+
 app.include_router(
     fastapi_users.get_users_router(UserRead, UserUpdate),
     prefix="/auth",
     tags=["auth"],
 )
+
+
+# ---------------------------------------------------------------------------
+# OAuth routers (Google, GitHub) — mounted only when credentials are present.
+#
+# Each provider exposes:
+#   GET /auth/{provider}/authorize  → returns the provider authorization URL
+#   GET /auth/{provider}/callback   → provider redirects here; on success the
+#                                      cookie backend sets the httpOnly
+#                                      `relay_session` cookie.
+#
+# redirect_url is left to FastAPI-Users' default (derived from the incoming
+# request), so the same code serves http://localhost:8000 and
+# https://relay.umaid.dev. Ensure the matching callback URL is registered with
+# each provider (see .env comments).
+#
+# associate_by_email=True links an OAuth login to an existing email/password
+# account with the same address, instead of creating a duplicate user.
+# ---------------------------------------------------------------------------
+
+if google_oauth_client is not None:
+    app.include_router(
+        fastapi_users.get_oauth_router(
+            google_oauth_client,
+            oauth_cookie_backend,
+            OAUTH_STATE_SECRET,
+            associate_by_email=True,
+            is_verified_by_default=True,
+        ),
+        prefix="/auth/google",
+        tags=["auth"],
+    )
+
+if github_oauth_client is not None:
+    app.include_router(
+        fastapi_users.get_oauth_router(
+            github_oauth_client,
+            oauth_cookie_backend,
+            OAUTH_STATE_SECRET,
+            associate_by_email=True,
+            is_verified_by_default=True,
+        ),
+        prefix="/auth/github",
+        tags=["auth"],
+    )
 
 
 # ---------------------------------------------------------------------------

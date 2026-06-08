@@ -71,7 +71,11 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
             session.add(record)
             # commit happens automatically on __aexit__
     """
-    async with AsyncSession(engine) as session:
+    # expire_on_commit=False: required for async sessions so attributes (e.g.
+    # the OAuth user's relationships, read after commit when building the
+    # session token) aren't expired and lazily re-loaded outside the async
+    # greenlet — which raises MissingGreenlet.
+    async with AsyncSession(engine, expire_on_commit=False) as session:
         try:
             yield session
             await session.commit()
@@ -86,7 +90,11 @@ async def get_session_dep() -> AsyncGenerator[AsyncSession, None]:
     Use with ``Depends(get_session_dep)`` in route signatures.
     The caller is responsible for committing; rollback occurs on exception.
     """
-    async with AsyncSession(engine) as session:
+    # expire_on_commit=False: required for async sessions so attributes (e.g.
+    # the OAuth user's relationships, read after commit when building the
+    # session token) aren't expired and lazily re-loaded outside the async
+    # greenlet — which raises MissingGreenlet.
+    async with AsyncSession(engine, expire_on_commit=False) as session:
         try:
             yield session
             await session.commit()

@@ -14,10 +14,13 @@ import type {
 // Base fetch helpers
 // ---------------------------------------------------------------------------
 
+// credentials: "include" sends the httpOnly `relay_session` cookie set by the
+// OAuth flow, so OAuth users authenticate even without a bearer token in
+// localStorage. Password users still send Authorization: Bearer.
 async function get<T>(path: string, token?: string | null): Promise<T> {
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const response = await fetch(path, { headers });
+  const response = await fetch(path, { headers, credentials: "include" });
   if (!response.ok) throw new Error(`API error ${response.status}: ${path}`);
   return response.json() as Promise<T>;
 }
@@ -101,15 +104,59 @@ export async function login(
   return response.json();
 }
 
-export async function logout(token: string): Promise<void> {
-  await fetch("/auth/jwt/logout", {
+export async function logout(token: string | null): Promise<void> {
+  // Clear the bearer session (if any)…
+  if (token) {
+    await fetch("/auth/jwt/logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+    }).catch(() => {});
+  }
+  // …and the OAuth cookie session (if any). The cookie backend's logout
+  // expires the relay_session cookie.
+  await fetch("/auth/cookie/logout", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
+    credentials: "include",
+  }).catch(() => {});
 }
 
-export function getMe(token: string): Promise<UserInfo> {
+// token is optional: OAuth users have no bearer token and authenticate via the
+// httpOnly cookie that `credentials: "include"` sends automatically.
+export function getMe(token?: string | null): Promise<UserInfo> {
   return get<UserInfo>("/auth/me", token);
+}
+
+// ---------------------------------------------------------------------------
+// OAuth
+// ---------------------------------------------------------------------------
+
+export interface AuthConfig {
+  google: boolean;
+  github: boolean;
+}
+
+export function getAuthConfig(): Promise<AuthConfig> {
+  return get<AuthConfig>("/auth/config");
+}
+
+/**
+ * Begin the OAuth sign-in flow for a provider.
+ *
+ * Asks the backend for the provider's authorization URL (the backend embeds a
+ * signed state param and the request-derived callback URL), then sends the
+ * browser there. After the user approves, the provider redirects to
+ * /auth/{provider}/callback, which sets the httpOnly session cookie.
+ */
+export async function startOAuth(provider: "google" | "github"): Promise<void> {
+  const res = await fetch(`/auth/${provider}/authorize`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`Could not start ${provider} sign-in`);
+  const { authorization_url } = (await res.json()) as {
+    authorization_url: string;
+  };
+  window.location.href = authorization_url;
 }
 
 // ---------------------------------------------------------------------------

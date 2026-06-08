@@ -1,8 +1,10 @@
 # Caddyfile for Relay
-# Replace relay.example.com with your subdomain.
 # Caddy handles HTTPS automatically via Let's Encrypt.
+# Caddy sets X-Forwarded-Proto/Host by default; uvicorn must run with
+# --proxy-headers (see Dockerfile) so request-derived OAuth callback URLs
+# come out as https://relay.umaid.dev/... rather than http://proxy:8000/...
 
-relay.example.com {
+relay.umaid.dev {
     reverse_proxy proxy:8000
 }
 

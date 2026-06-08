@@ -34,17 +34,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
   const [loading, setLoading] = useState(true);
 
-  // On mount, verify stored token is still valid
+  // On mount, establish the session. A bearer token (password login) is sent
+  // explicitly; otherwise we still call getMe with no token so the httpOnly
+  // OAuth cookie (if present) is picked up via credentials: "include".
   useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      return;
-    }
     getMe(token)
       .then((me) => setUser(me))
       .catch(() => {
-        localStorage.removeItem(TOKEN_KEY);
-        setToken(null);
+        if (token) {
+          localStorage.removeItem(TOKEN_KEY);
+          setToken(null);
+        }
       })
       .finally(() => setLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -58,9 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    if (token) {
-      await apiLogout(token).catch(() => {});
-    }
+    // Clears both the bearer session and the OAuth cookie session.
+    await apiLogout(token).catch(() => {});
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setUser(null);
